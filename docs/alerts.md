@@ -38,3 +38,18 @@
   - shorten prompts
   - route easy requests to cheaper model
   - apply prompt cache
+
+## 4. Quality score degradation
+- Severity: P2
+- Trigger: `quality_avg < 0.6 for 15m`
+- Impact: users receive low-quality answers below SLO threshold
+- First checks:
+  1. Check `quality_avg` in `/metrics` — compare to SLO target (0.75)
+  2. Filter Langfuse traces by low `quality_score` — inspect which feature/session affected
+  3. Compare RAG retrieval counts (`doc_count` in trace metadata) — empty docs lower quality
+  4. Check if `llm_quality_drop` incident toggle is enabled
+- Mitigation:
+  - verify RAG index is not empty or stale
+  - inspect prompt template for regressions
+  - route affected feature to fallback retrieval source
+  - re-run `validate_logs.py` to confirm no scoring pipeline breakage

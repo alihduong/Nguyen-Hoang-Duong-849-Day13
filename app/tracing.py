@@ -4,8 +4,18 @@ import os
 from typing import Any
 
 try:
+    from langfuse import Langfuse
     from langfuse.decorators import observe, langfuse_context
+
+    # Initialize Langfuse client
+    langfuse = Langfuse(
+        public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+        secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+        host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+    )
+
 except Exception:  # pragma: no cover
+
     def observe(*args: Any, **kwargs: Any):
         def decorator(func):
             return func
@@ -19,7 +29,11 @@ except Exception:  # pragma: no cover
             return None
 
     langfuse_context = _DummyContext()
+    langfuse = None
 
 
 def tracing_enabled() -> bool:
-    return bool(os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"))
+    return bool(
+        os.getenv("LANGFUSE_PUBLIC_KEY")
+        and os.getenv("LANGFUSE_SECRET_KEY")
+    )

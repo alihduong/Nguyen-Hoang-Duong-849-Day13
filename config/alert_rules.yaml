@@ -17,3 +17,9 @@ alerts:
     type: symptom-based
     owner: finops-owner
     runbook: docs/alerts.md#3-cost-budget-spike
+  - name: quality_score_degradation
+    severity: P2
+    condition: quality_avg < 0.6 for 15m
+    type: symptom-based
+    owner: team-oncall
+    runbook: docs/alerts.md#4-quality-score-degradation

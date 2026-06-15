@@ -14,6 +14,7 @@ from .middleware import CorrelationIdMiddleware
 from .pii import hash_user_id, summarize_text
 from .schemas import ChatRequest, ChatResponse
 from .tracing import tracing_enabled
+from structlog.contextvars import bind_contextvars, clear_contextvars
 
 configure_logging()
 log = get_logger()
@@ -27,6 +28,7 @@ async def startup() -> None:
     log.info(
         "app_started",
         service=os.getenv("APP_NAME", "day13-observability-lab"),
+        correlation_id="SYSTEM",
         env=os.getenv("APP_ENV", "dev"),
         payload={"tracing_enabled": tracing_enabled()},
     )
@@ -44,14 +46,23 @@ async def metrics() -> dict:
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: Request, body: ChatRequest) -> ChatResponse:
-    # TODO: Enrich logs with request context (user_id_hash, session_id, feature, model, env)
-    # bind_contextvars(...)
-    
+    clear_contextvars()
+
+    bind_contextvars(
+        service="api",
+        user_id_hash=hash_user_id(body.user_id),
+        session_id=body.session_id,
+        feature=body.feature,
+        model=os.getenv("MODEL_NAME", "unknown"),
+        env=os.getenv("APP_ENV", "dev"),
+        correlation_id=request.state.correlation_id,
+    )
+
     log.info(
         "request_received",
-        service="api",
         payload={"message_preview": summarize_text(body.message)},
     )
+
     try:
         result = agent.run(
             user_id=body.user_id,
@@ -60,13 +71,12 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             message=body.message,
         )
         log.info(
-            "response_sent",
-            service="api",
+            "request_completed",
             latency_ms=result.latency_ms,
             tokens_in=result.tokens_in,
             tokens_out=result.tokens_out,
             cost_usd=result.cost_usd,
-            payload={"answer_preview": summarize_text(result.answer)},
+            quality_score=result.quality_score,
         )
         return ChatResponse(
             answer=result.answer,
@@ -77,16 +87,15 @@ async def chat(request: Request, body: ChatRequest) -> ChatResponse:
             cost_usd=result.cost_usd,
             quality_score=result.quality_score,
         )
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:
         error_type = type(exc).__name__
         record_error(error_type)
         log.error(
             "request_failed",
-            service="api",
             error_type=error_type,
-            payload={"detail": str(exc), "message_preview": summarize_text(body.message)},
+            payload={"error": str(exc)},
         )
-        raise HTTPException(status_code=500, detail=error_type) from exc
+        raise HTTPException(status_code=500, detail="Internal agent error") from exc
 
 
 @app.post("/incidents/{name}/enable")
